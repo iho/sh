@@ -1,0 +1,2 @@
+(env (dev (flags (:standard -warn-error -A))))
+(install (files LICENSE) (section share) (package ush))
