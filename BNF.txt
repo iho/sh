@@ -31,6 +31,7 @@
 
 %start program
 %%
+
 program             : linebreak complete_commands linebreak | linebreak ;
 complete_commands   : complete_commands newline_list complete_command | complete_command ;
 complete_command    : list separator_op | list ;

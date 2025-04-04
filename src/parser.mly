@@ -9,6 +9,7 @@ let snd3 (_, b, _) = b
 let trd3 (_, _, c) = c
 let fst (a, _) = a
 let snd (_, b) = b
+let extract_words = List.map (function Word w -> w | _ -> failwith "Expected Word")
 %}
 
 %token <string> WORD ASSIGNMENT_WORD NAME
@@ -16,30 +17,29 @@ let snd (_, b) = b
 %token AND_IF OR_IF DSEMI DLESS DGREAT LESSAND GREATAND LESSGREAT DLESSDASH CLOBBER
 %token LESS GREAT PIPE AMP SEMI NEWLINE EOF BANG LPAREN RPAREN LBRACE RBRACE
 %token IF THEN ELSE ELIF FI DO DONE CASE ESAC WHILE UNTIL FOR IN
-%start <Ast.program> program
+%start <Ast.exp> program
 
 %%
 
 program:
-  | complete_commands EOF { $1 }
-  | EOF { [] }
+  | complete_commands { Program $1 }
 
 complete_commands:
   | complete_commands NEWLINE complete_command { $1 @ [$3] }
   | complete_command { [$1] }
 
 complete_command:
-  | list separator_op { ($1, Some $2) }
-  | list { ($1, None) }
+  | list separator_op { ListItem ($1, Some $2) }
+  | list { ListItem ($1, None) }
 
 list:
   | list separator_op and_or { List ($1, $2, $3) }
   | and_or { $1 }
 
 and_or:
-  | pipeline { AndOr $1 }
-  | and_or AND_IF pipeline { AndIf ($1, $3) }
-  | and_or OR_IF pipeline { OrIf ($1, $3) }
+  | pipeline { Pipeline (fst $1, snd $1) }
+  | and_or AND_IF pipeline { AndIf ($1, Pipeline (fst $3, snd $3)) }
+  | and_or OR_IF pipeline { OrIf ($1, Pipeline (fst $3, snd $3)) }
 
 pipeline:
   | pipe_sequence { (false, $1) }
@@ -56,10 +56,10 @@ command:
   | function_definition { $1 }
 
 simple_command:
-  | cmd_prefix cmd_word cmd_suffix { Some ($2, $3) }
+  | cmd_prefix cmd_word cmd_suffix { Some ($2, extract_words $3) }
   | cmd_prefix cmd_word { Some ($2, []) }
   | cmd_prefix { None }
-  | cmd_name cmd_suffix { Some ($1, $2) }
+  | cmd_name cmd_suffix { Some ($1, extract_words $2) }
   | cmd_name { Some ($1, []) }
 
 cmd_name:
@@ -77,13 +77,13 @@ cmd_prefix:
 cmd_suffix:
   | io_redirect { [] }
   | cmd_suffix io_redirect { $1 }
-  | WORD { [$1] }
-  | cmd_suffix WORD { $1 @ [$2] }
+  | WORD { [Word $1] }
+  | cmd_suffix WORD { $1 @ [Word $2] }
 
 compound_command:
   | brace_group { BraceGroup $1 }
   | subshell { Subshell $1 }
-  | for_clause { ForClause (fst3 $1, snd3 $1, trd3 $1) }
+  | for_clause { ForClause (fst3 $1, Option.map extract_words (snd3 $1), trd3 $1) }
   | case_clause { CaseClause (fst $1, snd $1) }
   | if_clause { IfClause (fst4 $1, snd4 $1, trd4 $1, fth4 $1) }
   | while_clause { WhileClause (fst $1, snd $1) }
@@ -107,8 +107,8 @@ for_clause:
   | FOR NAME SEMI do_group { ($2, None, $4) }
 
 wordlist:
-  | WORD { [$1] }
-  | wordlist WORD { $1 @ [$2] }
+  | WORD { [Word $1] }
+  | wordlist WORD { $1 @ [Word $2] }
 
 case_clause:
   | CASE WORD IN case_list ESAC { ($2, $4) }
@@ -119,12 +119,12 @@ case_list:
   | case_item { [$1] }
 
 case_item:
-  | pattern RPAREN compound_list DSEMI { ($1, $3) }
-  | pattern RPAREN { ($1, []) }
+  | pattern RPAREN compound_list DSEMI { (extract_words $1, $3) }
+  | pattern RPAREN { (extract_words $1, []) }
 
 pattern:
-  | WORD { [$1] }
-  | pattern PIPE WORD { $1 @ [$3] }
+  | WORD { [Word $1] }
+  | pattern PIPE WORD { $1 @ [Word $3] }
 
 if_clause:
   | IF compound_list THEN compound_list FI { ($2, $4, [], None) }

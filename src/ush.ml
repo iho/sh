@@ -2,33 +2,37 @@ open Ast
 open Unix
 open Stdlib
 
-let rec execute_program prog =
-  List.iter execute_list_item prog
+let rec execute_program = function
+  | Program items -> List.iter execute_list_item items
+  | _ -> failwith "Expected Program"
 
-and execute_list_item (and_or, sep) =
-  let status = execute_and_or and_or in
-  match sep with
-  | Some `Amp ->
-      if fork () = 0 then begin
-        ignore (execute_and_or and_or);
-        exit 0
-      end
-  | _ -> ()
+and execute_list_item = function
+  | ListItem (and_or, sep) ->
+      let status = execute_exp and_or in
+      (match sep with
+       | Some `Amp ->
+           if fork () = 0 then begin
+             ignore (execute_exp and_or);
+             exit 0
+           end
+       | _ -> ())
+  | _ -> failwith "Expected ListItem"
 
-and execute_and_or = function
-  | AndOr p -> execute_pipeline p
-  | AndIf (a, p) -> if execute_and_or a = 0 then execute_pipeline p else 1
-  | OrIf (a, p) -> if execute_and_or a <> 0 then execute_pipeline p else 0
+and execute_exp = function
+  | Pipeline (bang, cmds) -> execute_pipeline (bang, cmds)
+  | AndIf (a, p) -> if execute_exp a = 0 then execute_exp p else 1
+  | OrIf (a, p) -> if execute_exp a <> 0 then execute_exp p else 0
   | List (a, op, b) ->
-      let status = execute_and_or a in
+      let status = execute_exp a in
       (match op with
        | `Amp ->
            if fork () = 0 then begin
-             ignore (execute_and_or b);
+             ignore (execute_exp b);
              exit 0
            end;
            status
-       | `Semi -> if status = 0 then execute_and_or b else status)
+       | `Semi -> if status = 0 then execute_exp b else status)
+  | exp -> execute_command exp
 
 and execute_pipeline (bang, cmds) =
   let rec pipe cmds =
@@ -58,7 +62,9 @@ and execute_command = function
       let pid = fork () in
       if pid = 0 then begin
         List.iter apply_redirect redirects;
-        execvp cmd (Array.of_list (cmd :: args))
+        (try execvp cmd (Array.of_list (cmd :: args))
+         with Unix_error (ENOENT, _, _) -> 
+           Printf.eprintf "ush: command not found: %s\n" cmd; exit 127)
       end else begin
         let (_, status) = waitpid [] pid in
         match status with WEXITED n -> n | _ -> 1
@@ -69,13 +75,13 @@ and execute_command = function
       let pid = fork () in
       if pid = 0 then begin
         List.iter apply_redirect redirects;
-        execute_compound comp; exit 0
+        ignore (execute_exp comp); exit 0
       end else begin
         let (_, status) = waitpid [] pid in
         match status with WEXITED n -> n | _ -> 1
       end
-  | FunctionDef (name, body) ->
-      0
+  | FunctionDef (name, body) -> 0
+  | _ -> failwith "Expected command"
 
 and apply_redirect = function
   | IoFile (n, op, file) ->
@@ -90,16 +96,17 @@ and apply_redirect = function
   | Assignment s ->
       let parts = String.split_on_char '=' s in
       Unix.putenv (List.hd parts) (List.nth parts 1)
+  | _ -> ()
 
 and execute_compound = function
-  | BraceGroup cmds -> List.iter (fun cmd -> ignore (execute_command cmd)) cmds; ()
-  | Subshell cmds -> List.iter (fun cmd -> ignore (execute_command cmd)) cmds; ()
+  | BraceGroup cmds -> List.iter (fun cmd -> ignore (execute_command cmd)) cmds
+  | Subshell cmds -> List.iter (fun cmd -> ignore (execute_command cmd)) cmds
   | ForClause (var, words, body) ->
       let words = match words with Some ws -> ws | None -> [] in
-      List.iter (fun w -> Unix.putenv var w; List.iter (fun cmd -> ignore (execute_command cmd)) body) words; ()
+      List.iter (fun w -> Unix.putenv var w; List.iter (fun cmd -> ignore (execute_command cmd)) body) words
   | CaseClause (word, cases) ->
       List.iter (fun (pats, cmds) ->
-        if List.mem word pats then List.iter (fun cmd -> ignore (execute_command cmd)) cmds) cases; ()
+        if List.mem word pats then List.iter (fun cmd -> ignore (execute_command cmd)) cmds) cases
   | IfClause (cond, then_part, elifs, else_part) ->
       if execute_condition cond then List.iter (fun cmd -> ignore (execute_command cmd)) then_part
       else begin
@@ -109,11 +116,12 @@ and execute_compound = function
               if execute_condition c then List.iter (fun cmd -> ignore (execute_command cmd)) t
               else check_elifs rest
         in check_elifs elifs
-      end; ()
+      end
   | WhileClause (cond, body) ->
-      while execute_condition cond do List.iter (fun cmd -> ignore (execute_command cmd)) body done; ()
+      while execute_condition cond do List.iter (fun cmd -> ignore (execute_command cmd)) body done
   | UntilClause (cond, body) ->
-      while not (execute_condition cond) do List.iter (fun cmd -> ignore (execute_command cmd)) body done; ()
+      while not (execute_condition cond) do List.iter (fun cmd -> ignore (execute_command cmd)) body done
+  | _ -> failwith "Expected compound command"
 
 and execute_condition cmds =
   let status = List.fold_left (fun acc cmd ->
@@ -121,29 +129,24 @@ and execute_condition cmds =
     if acc = 0 then s else acc) 0 cmds
   in status = 0
 
-let () =
-  let prompt = "sh> " in
-  Printf.printf "%s" prompt;
-  flush stdout;
-  let lexbuf = Lexing.from_channel stdin in
-  let rec loop () =
-    try
-      let ast = Parser.program Lexer.token lexbuf in
-      execute_program ast;
-      Printf.printf "%s" prompt; flush stdout;
-      loop ()
-    with
-    | Lexer.SyntaxError msg ->
-        Printf.eprintf "Lexing error: %s\n" msg;
-        Lexing.flush_input lexbuf;
-        Printf.printf "%s" prompt; flush stdout;
-        loop ()
-    | Parser.Error ->
-        Printf.eprintf "Parsing error\n";
-        Lexing.flush_input lexbuf;
-        Printf.printf "%s" prompt; flush stdout;
-        loop ()
-    | End_of_file ->
-        Printf.printf "Goodbye\n"; exit 0
-  in
-  loop ()
+let parse_string input =
+  try
+    let lexbuf = Lexing.from_string input in
+    let ast = Parser.program Lexer.token lexbuf in
+    Printf.printf "Debug: %s\n" (string_of_exp ast); flush stdout;
+    Some ast
+  with
+  | Lexer.Error msg -> Printf.eprintf "Lexer error: %s\n" msg; flush stdout; None
+  | Parser.Error -> Printf.eprintf "Parse error at position %d\n" (Lexing.lexeme_start (Lexing.from_string input)); flush stdout; None
+
+let repl () =
+  print_endline ("Synrc POSIX Shell (c) 2025\n");
+  try while true do
+    print_string "$ "; flush stdout;
+    let line = read_line () in
+    match parse_string line with
+    | Some ast -> Printf.printf "%s" (string_of_exp ast)
+    | None -> Printf.printf ": None\n"
+  done with End_of_file -> print_newline ()
+
+let () = repl ()
