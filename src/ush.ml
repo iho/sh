@@ -1,5 +1,6 @@
 open Ast
 open Unix
+open Token
 open Stdlib
 
 let rec execute_program = function

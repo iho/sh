@@ -45,7 +45,7 @@ rule token = parse
   | "&" { AMP }
   | ";" { SEMI }
   | "!" { BANG }
-  | "(" { LPAREN } 
+  | "(" { LPAREN }
   | ")" { RPAREN }
   | "{" { LBRACE }
   | "}" { RBRACE }
