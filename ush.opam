@@ -6,7 +6,7 @@ authors: [ "Groupoid Infinity" ]
 homepage: "https://sh.5ht.co/"
 bug-reports: "https://github.com/BitEdits/sh/issues"
 dev-repo: "https://github.com/BitEdits/sh"
-synopsis: "POSIX Mini Shell"
+synopsis: "POSIX Micro Shell"
 license: "ISC"
 depends: [
   "dune" {>= "2.9"}
