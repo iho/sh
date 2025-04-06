@@ -13,25 +13,31 @@
 <main>
     <section>
 
-        <h3>SH: Mini Shell</h3>
+        <h3>SH: Verified Shell</h3>
 
         <h4>Анотація</h4>
 
         <center><a href="https://github.com/BitEdits/sh/"><img src="img/sh.png" width=150></a></center>
         <br>
 
-        <p>Mini Shell -- це реімплементація Bourne Shell.</p>
+        <p>Mini Shell -- верифікована імплементація POXIS Shell.</p>
 
         <p>— Робота під Windows, Linux, Mac, BSD;<br>
            — Без залежностей, потрібно тільки C99/POSIX які є стандартом;<br>
-           — Вбудовані команди;<br>
-           — Мова програмування Bourne Shell.<br>
+           — Формальна BNF нотація в LR(1);<br>
+           — Вбудовані і зовнішні команди;<br>
+           — Мова програмування;<br>
+           — Відповідність IEEE 1003.2 POSIX Shell and Utilities;<br>
+           — Формальна модель на OCaml (верифікація системою F);<br>
+           — Формальна модель на Coq (верифікація CIC/MLTT);<br>
+           — Генерація C з Coq/OCaml;<br>
+           — Перший верифікований POSIX shell в світі.<br>
         </p>
 
         <h4>Параметри</h4>
 
         <p>Цей шелл можна також використовувати у якості вправи для написання консольних додатків.
-           Головним чином це сцена яка обмежена мовою інтерпретатора команд.</p>
+           Головним чином це сцена яка обмежена мовою інтерпретатора команд IEEE 1003.2.</p>
 
         <figure><code>$ ./sh
         </code></figure>
@@ -56,6 +62,74 @@
         </p>
 
         <h4>Мова програмування</h4>
+
+<p>AST ініціального об'єкту синтаксичної категорії.</p>
+
+<figure><code>
+type redirect_op =
+  | Less | Great | DGreat | LessAnd | GreatAnd | LessGreat
+  | DLess | DLessDash | Clobber
+
+type exp =
+  | Word of word
+  | IoFile of io_number option * redirect_op * word
+  | IoHere of io_number option * redirect_op * word
+  | Assignment of string
+  | Simple of (word * word list) option * exp list
+  | Compound of exp * exp list
+  | FunctionDef of string * exp
+  | BraceGroup of exp list
+  | Subshell of exp list
+  | ForClause of string * word list option * exp list
+  | CaseClause of word * (word list * exp list) list
+  | IfClause of exp list * exp list * (exp list * exp list) list * exp list option
+  | WhileClause of exp list * exp list
+  | UntilClause of exp list * exp list
+  | Pipeline of bool * exp list
+  | AndOr of exp
+  | AndIf of exp * exp
+  | OrIf of exp * exp
+  | List of exp * [`Amp | `Semi] * exp
+  | ListItem of exp * [`Amp | `Semi] option
+  | Program of exp list
+</code></figure>
+
+<p>Практичний синтаксис в BNF нотації</p>
+
+<figure><code>
+program:       | list separator | list
+list:          | list separator and_or | and_or
+and_or:        | pipeline | and_or AND_IF pipeline | and_or OR_IF pipeline
+pipeline:      | pipe_sequence | BANG pipe_sequence
+pipe_sequence: | command | pipe_sequence PIPE command
+command:       | scmd | compound | compound rlist | function_def
+compound:      | brace_group | subshell | for_clause | case_clause | if_clause | while_clause | until_clause
+subshell:      | LPAREN clist RPAREN
+clist:         | term
+term:          | term separator command
+for_clause:    | FOR NAME IN wlist SEMI do_group | FOR NAME do_group
+wlist:         | WORD | wlist WORD
+case_clause:   | CASE WORD IN case_list ESAC | CASE WORD IN ESAC
+case_list:     | case_list case_item | case_item
+case_item:     | pattern RPAREN clist DSEMI | LPAREN pattern RPAREN clist DSEMI
+pattern:       | WORD | pattern PIPE WORD
+if_clause:     | IF clist THEN clist FI | IF clist THEN clist else_part FI
+else_part:     | ELSE clist | ELIF clist THEN clist | ELIF clist THEN clist else_part
+while_clause:  | WHILE clist DO do_group
+until_clause:  | UNTIL clist DO do_group
+function_def:  | NAME LPAREN RPAREN function_body
+function_body: | compound | compound rlist
+brace_group:   | LBRACE clist RBRACE
+do_group:      | DO clist DONE
+scmd:          | prefix WORD suffix | prefix WORD | prefix | WORD suffix | WORD
+rlist:         | io_redirect | rlist io_redirect
+io_redirect:   | io_file | IO_NUMBER io_file | io_here | IO_NUMBER io_here
+io_file:       | LESS WORD | GREAT WORD | DGREAT WORD | LESSAND WORD | GREATAND WORD | LESSGREAT WORD | CLOBBER WORD
+io_here:       | DLESS WORD | DLESSDASH WORD
+separator:     | AMP | SEMI
+prefix:        | io_redirect | prefix io_redirect | ASSIGNMENT_WORD | prefix ASSIGNMENT_WORD
+suffix:        | io_redirect | suffix io_redirect | WORD | suffix WORD
+</code></figure>
 
         <p>Мова програмування сумісна навіть з першими шелами.</p>
 
