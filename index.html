@@ -103,7 +103,8 @@ and_or:        | pipeline | and_or AND_IF pipeline | and_or OR_IF pipeline
 pipeline:      | pipe_sequence | BANG pipe_sequence
 pipe_sequence: | command | pipe_sequence PIPE command
 command:       | scmd | compound | compound rlist | function_def
-compound:      | brace_group | subshell | for_clause | case_clause | if_clause | while_clause | until_clause
+compound:      | brace_group | subshell | for_clause | case_clause
+               | if_clause | while_clause | until_clause
 subshell:      | LPAREN clist RPAREN
 clist:         | term
 term:          | term separator command
@@ -124,7 +125,8 @@ do_group:      | DO clist DONE
 scmd:          | prefix WORD suffix | prefix WORD | prefix | WORD suffix | WORD
 rlist:         | io_redirect | rlist io_redirect
 io_redirect:   | io_file | IO_NUMBER io_file | io_here | IO_NUMBER io_here
-io_file:       | LESS WORD | GREAT WORD | DGREAT WORD | LESSAND WORD | GREATAND WORD | LESSGREAT WORD | CLOBBER WORD
+io_file:       | LESS WORD | GREAT WORD | DGREAT WORD | LESSAND WORD
+               | GREATAND WORD | LESSGREAT WORD | CLOBBER WORD
 io_here:       | DLESS WORD | DLESSDASH WORD
 separator:     | AMP | SEMI
 prefix:        | io_redirect | prefix io_redirect | ASSIGNMENT_WORD | prefix ASSIGNMENT_WORD
