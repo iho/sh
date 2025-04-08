@@ -25,6 +25,7 @@ let extract_words = List.map (function Word w -> w | _ -> raise (Failure "Expect
 
 program:       | list separator                    { ListItem ($1, Some $2) }
                | list                              { ListItem ($1, None) }
+               | list NEWLINE                      { ListItem ($1, None) }
 list:          | list separator and_or             { List ($1, $2, $3) }
                | and_or                            { $1 }
 and_or:        | pipeline                          { Pipeline (fst $1, snd $1) }
@@ -47,7 +48,10 @@ compound:      | brace_group                       { BraceGroup $1 }
                | until_clause                      { UntilClause (fst $1, snd $1) }
 subshell:      | LPAREN clist RPAREN               { $2 }
 clist:         | term                              { $1 }
-term:          | term separator command            { $1 @ [$3] }
+               | term SEMI                         { $1 }  (* Ignore trailing SEMI *)
+               | term SEMI clist                   { $1 @ $3 }  (* Multiple terms *)
+term:          | command                           { [$1] }
+               | command SEMI                      { [$1] }  (* Allow SEMI after command *)
 for_clause:    | FOR NAME IN wlist SEMI do_group   { ($2, Some $4, $6) }
                | FOR NAME do_group                 { ($2, None, $3) }
 wlist:         | WORD                              { [Word $1] }
@@ -102,3 +106,5 @@ suffix:        | io_redirect                       { [] }
                | suffix io_redirect                { $1 }
                | WORD                              { [Word $1] }
                | suffix WORD                       { $1 @ [Word $2] }
+               | SEMI                              { [] }
+               | suffix SEMI                       { $1 }

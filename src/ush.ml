@@ -2,6 +2,7 @@ open Ast
 open Unix
 open Token
 open Stdlib
+open Parser
 
 let rec execute_program = function
   | Program items -> List.iter execute_list_item items
@@ -130,23 +131,52 @@ and execute_condition cmds =
     if acc = 0 then s else acc) 0 cmds
   in status = 0
 
+let parse_string2 input =
+  try
+    let lexbuf = Lexing.from_string (input ^ "\n") in
+    let rec print_tokens () =
+      let tok = Lexer.token lexbuf in
+      if tok = EOF then () else (Printf.printf "Token: %s\n" (tokenToString tok); print_tokens ())
+    in
+    let _ = print_tokens () in
+    let lexbuf = Lexing.from_string (input ^ "\n") in
+    Printf.printf "Starting parse...\n"; flush stdout;
+    let ast = Parser.program Lexer.token lexbuf in
+    let _ = Printf.printf "Debug 2: %s\n" (string_of_exp ast) in
+    flush stdout;
+    Some ast
+  with
+  | Lexer.Error msg -> Printf.printf "Lexer error: %s\n" msg; flush stdout; None
+  | Parser.Error -> Printf.printf "Parse error at position %d\n" (Lexing.lexeme_start (Lexing.from_string input)); flush stdout; None
+  | Error.Parser (line, tok, _) -> Printf.printf "Custom parse error at line %d, token '%s'\n" line tok; flush stdout; None
+  | ex -> Printf.printf "Unexpected error: %s\n" (Printexc.to_string ex); flush stdout; None
+
 let parse_string input =
   try
-    let lexbuf = Lexing.from_string input in
+    let lexbuf = Lexing.from_string (input ^ "\n") in
+    let rec print_tokens () =
+      let tok = Lexer.token lexbuf in
+      if tok = EOF then () else (Printf.printf "Token: %s\n" (tokenToString tok); print_tokens ())
+    in
+    let _ = print_tokens () in
+    let lexbuf = Lexing.from_string (input ^ "\n") in
+    Printf.printf "Starting parse...\n"; flush stdout;
     let ast = Parser.program Lexer.token lexbuf in
-    Printf.printf "Debug: %s\n" (string_of_exp ast); flush stdout;
+    let _ = Printf.printf "Debug 2: %s\n" (string_of_exp ast) in
+    flush stdout;
     Some ast
   with
   | Lexer.Error msg -> Printf.eprintf "Lexer error: %s\n" msg; flush stdout; None
-  | Parser.Error -> Printf.eprintf "Parse error at position %d\n" (Lexing.lexeme_start (Lexing.from_string input)); flush stdout; None
+  | Parser.Error -> Printf.printf "Parse error at position %d\n" (Lexing.lexeme_start (Lexing.from_string input)); flush stdout; None
+  | ex -> Printf.eprintf "Unexpected error: %s\n" (Printexc.to_string ex); flush stdout; None
 
 let repl () =
   print_endline ("Synrc POSIX Shell (c) 2025\n");
   try while true do
-    print_string "$ "; flush stdout;
+    print_string "$ ";
     let line = read_line () in
     match parse_string line with
-    | Some ast -> Printf.printf "%s" (string_of_exp ast)
+    | Some ast -> Printf.printf ": Parsed (%s)\n" (string_of_exp ast)
     | None -> Printf.printf ": None\n"
   done with End_of_file -> print_newline ()
 

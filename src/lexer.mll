@@ -29,6 +29,7 @@ let name = letter (letter | digit | '_')*
 let word = [^ ' ' '\t' '\n' ';' '&' '|' '<' '>' '(' ')' '{' '}']+ | '"' [^ '"']* '"'
 
 rule token = parse
+  | '\n' { NEWLINE }
   | [' ' '\t' '\n'] { token lexbuf }
   | "&&" { AND_IF }
   | "||" { OR_IF }
@@ -63,7 +64,7 @@ rule token = parse
   | "for" { FOR }
   | "in" { IN }
   | ['0'-'9']+ as n { IO_NUMBER (int_of_string n) }
-  | ['a'-'z' 'A'-'Z' '_']['a'-'z' 'A'-'Z' '0'-'9' '_']* as w { WORD w }
+  | [^ ' ' '\t' '\n' ';' '&' '|' '<' '>' '(' ')' '{' '}']+ as w { WORD w }
   | eof { EOF }
   | _ { raise (Error (Lexing.lexeme lexbuf)) }
 
