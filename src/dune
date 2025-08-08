@@ -1,3 +1,8 @@
 (ocamllex lexer)
 (menhir (modules parser))
-(executable (name ush) (package ush) (libraries unix menhirLib) (public_name ush))
+
+(executable
+ (public_name ush)
+ (name ush)
+ (modules ush ast error lexer parser reader token)
+ (libraries zarith unix menhirLib))

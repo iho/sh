@@ -96,8 +96,8 @@ io_file:       | LESS WORD                         { (Less, $2) }
                | CLOBBER WORD                      { (Clobber, $2) }
 io_here:       | DLESS WORD                        { (DLess, $2) }
                | DLESSDASH WORD                    { (DLessDash, $2) }
-separator:     | AMP                               { `Amp }
-               | SEMI                              { `Semi }
+separator:     | AMP                               { Amp }
+               | SEMI                              { Semi }
 prefix:        | io_redirect                       { [$1] }
                | prefix io_redirect                { $1 @ [$2] }
                | ASSIGNMENT_WORD                   { [Assignment $1] }

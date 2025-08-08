@@ -37,5 +37,6 @@ let tokenToString : token -> string = function
   | IO_NUMBER n -> string_of_int n
   | NAME n      -> n
   | WORD n      -> n
+  | ASSIGNMENT_WORD s -> s
   | EOF         -> "EOF"
   | NEWLINE     -> "NL"

@@ -5,6 +5,10 @@ type redirect_op =
   | Less | Great | DGreat | LessAnd | GreatAnd | LessGreat
   | DLess | DLessDash | Clobber
 
+
+
+type sep = Amp | Semi
+
 type exp =
   | Word of word
   | IoFile of io_number option * redirect_op * word
@@ -24,9 +28,10 @@ type exp =
   | AndOr of exp                                   (* pipeline *)
   | AndIf of exp * exp                             (* left, right *)
   | OrIf of exp * exp                              (* left, right *)
-  | List of exp * [`Amp | `Semi] * exp             (* left, sep, right *)
-  | ListItem of exp * [`Amp | `Semi] option        (* and_or, separator *)
+  | List of exp * sep * exp             (* left, sep, right *)
+  | ListItem of exp * sep option        (* and_or, separator *)
   | Program of exp list                            (* list_items *)
+
 
 let rec string_of_exp = function
   | Word w -> w
@@ -50,9 +55,10 @@ let rec string_of_exp = function
   | Pipeline (bang, cmds) -> (if bang then "! " else "") ^ String.concat " | " (List.map string_of_exp cmds)
   | AndIf (left, right) -> string_of_exp left ^ " && " ^ string_of_exp right
   | OrIf (left, right) -> string_of_exp left ^ " || " ^ string_of_exp right
-  | List (left, sep, right) -> string_of_exp left ^ (match sep with `Amp -> " &" | `Semi -> " ;") ^ string_of_exp right
-  | ListItem (ao, sep) -> string_of_exp ao ^ (match sep with Some `Amp -> " &" | Some `Semi -> " ;" | None -> "")
+  | List (left, sep, right) -> string_of_exp left ^ (match sep with Amp -> " &" | Semi -> " ;") ^ string_of_exp right
+  | ListItem (ao, sep) -> string_of_exp ao ^ (match sep with Some Amp -> " &" | Some Semi -> " ;" | None -> "")
   | Program prog -> String.concat " " (List.map string_of_exp prog)
+  | AndOr e -> string_of_exp e
 
 and print_op = function
   | Less -> "<" | Great -> ">" | DGreat -> ">>" | LessAnd -> "<&" | GreatAnd -> ">&"

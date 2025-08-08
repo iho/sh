@@ -12,7 +12,7 @@ and execute_list_item = function
   | ListItem (and_or, sep) ->
       let status = execute_exp and_or in
       (match sep with
-       | Some `Amp ->
+       | Some Amp ->
            if fork () = 0 then begin
              ignore (execute_exp and_or);
              exit 0
@@ -27,13 +27,13 @@ and execute_exp = function
   | List (a, op, b) ->
       let status = execute_exp a in
       (match op with
-       | `Amp ->
+       | Amp ->
            if fork () = 0 then begin
              ignore (execute_exp b);
              exit 0
            end;
            status
-       | `Semi -> if status = 0 then execute_exp b else status)
+       | Semi -> if status = 0 then execute_exp b else status)
   | exp -> execute_command exp
 
 and execute_pipeline (bang, cmds) =
@@ -64,9 +64,15 @@ and execute_command = function
       let pid = fork () in
       if pid = 0 then begin
         List.iter apply_redirect redirects;
-        (try execvp cmd (Array.of_list (cmd :: args))
-         with Unix_error (ENOENT, _, _) -> 
-           Printf.eprintf "ush: command not found: %s\n" cmd; exit 127)
+        (* Execute with exception handling using direct exception pattern matching *)
+        begin
+          try execvp cmd (Array.of_list (cmd :: args))
+          with
+          | Unix_error (ENOENT, _, _) -> 
+              Printf.eprintf "ush: command not found: %s\n" cmd; exit 127
+          | ex ->
+              Printf.eprintf "ush: error executing %s: %s\n" cmd (Printexc.to_string ex); exit 1
+        end
       end else begin
         let (_, status) = waitpid [] pid in
         match status with WEXITED n -> n | _ -> 1
@@ -120,9 +126,19 @@ and execute_compound = function
         in check_elifs elifs
       end
   | WhileClause (cond, body) ->
-      while execute_condition cond do List.iter (fun cmd -> ignore (execute_command cmd)) body done
+      let rec while_loop () =
+        if execute_condition cond then (
+          List.iter (fun cmd -> ignore (execute_command cmd)) body;
+          while_loop ()
+        )
+      in while_loop ()
   | UntilClause (cond, body) ->
-      while not (execute_condition cond) do List.iter (fun cmd -> ignore (execute_command cmd)) body done
+      let rec until_loop () =
+        if not (execute_condition cond) then (
+          List.iter (fun cmd -> ignore (execute_command cmd)) body;
+          until_loop ()
+        )
+      in until_loop ()
   | _ -> failwith "Expected compound command"
 
 and execute_condition cmds =
@@ -132,52 +148,59 @@ and execute_condition cmds =
   in status = 0
 
 let parse_string2 input =
-  try
-    let lexbuf = Lexing.from_string (input ^ "\n") in
-    let rec print_tokens () =
-      let tok = Lexer.token lexbuf in
-      if tok = EOF then () else (Printf.printf "Token: %s\n" (tokenToString tok); print_tokens ())
-    in
-    let _ = print_tokens () in
-    let lexbuf = Lexing.from_string (input ^ "\n") in
-    Printf.printf "Starting parse...\n"; flush stdout;
-    let ast = Parser.program Lexer.token lexbuf in
-    let _ = Printf.printf "Debug 2: %s\n" (string_of_exp ast) in
-    flush stdout;
-    Some ast
-  with
-  | Lexer.Error msg -> Printf.printf "Lexer error: %s\n" msg; flush stdout; None
-  | Parser.Error -> Printf.printf "Parse error at position %d\n" (Lexing.lexeme_start (Lexing.from_string input)); flush stdout; None
-  | Error.Parser (line, tok, _) -> Printf.printf "Custom parse error at line %d, token '%s'\n" line tok; flush stdout; None
-  | ex -> Printf.printf "Unexpected error: %s\n" (Printexc.to_string ex); flush stdout; None
+  let rec print_tokens lexbuf =
+    let tok = Lexer.token lexbuf in
+    if tok = EOF then () else (Printf.printf "Token: %s\n" (tokenToString tok); print_tokens lexbuf)
+  in
+  let _ = print_tokens (Lexing.from_string (input ^ "\n")) in
+  let lexbuf = Lexing.from_string (input ^ "\n") in
+  Printf.printf "Starting parse...\n"; flush stdout;
+  match Parser.program Lexer.token lexbuf with
+  | ast -> 
+      let _ = Printf.printf "Debug 2: %s\n" (string_of_exp ast) in
+      flush stdout;
+      Some ast
+  | exception Lexer.Error msg -> 
+      Printf.printf "Lexer error: %s\n" msg; flush stdout; None
+  | exception Parser.Error -> 
+      Printf.printf "Parse error at position %d\n" (Lexing.lexeme_start (Lexing.from_string input)); flush stdout; None
+  | exception Error.Parser (line, tok, _) -> 
+      Printf.printf "Custom parse error at line %d, token '%s'\n" line tok; flush stdout; None
+  | exception ex -> 
+      Printf.printf "Unexpected error: %s\n" (Printexc.to_string ex); flush stdout; None
 
 let parse_string input =
-  try
-    let lexbuf = Lexing.from_string (input ^ "\n") in
-    let rec print_tokens () =
-      let tok = Lexer.token lexbuf in
-      if tok = EOF then () else (Printf.printf "Token: %s\n" (tokenToString tok); print_tokens ())
-    in
-    let _ = print_tokens () in
-    let lexbuf = Lexing.from_string (input ^ "\n") in
-    Printf.printf "Starting parse...\n"; flush stdout;
-    let ast = Parser.program Lexer.token lexbuf in
-    let _ = Printf.printf "Debug 2: %s\n" (string_of_exp ast) in
-    flush stdout;
-    Some ast
-  with
-  | Lexer.Error msg -> Printf.eprintf "Lexer error: %s\n" msg; flush stdout; None
-  | Parser.Error -> Printf.printf "Parse error at position %d\n" (Lexing.lexeme_start (Lexing.from_string input)); flush stdout; None
-  | ex -> Printf.eprintf "Unexpected error: %s\n" (Printexc.to_string ex); flush stdout; None
+  let rec print_tokens lexbuf =
+    let tok = Lexer.token lexbuf in
+    if tok = EOF then () else (Printf.printf "Token: %s\n" (tokenToString tok); print_tokens lexbuf)
+  in
+  let _ = print_tokens (Lexing.from_string (input ^ "\n")) in
+  let lexbuf = Lexing.from_string (input ^ "\n") in
+  Printf.printf "Starting parse...\n"; flush stdout;
+  match Parser.program Lexer.token lexbuf with
+  | ast -> 
+      let _ = Printf.printf "Debug 2: %s\n" (string_of_exp ast) in
+      flush stdout;
+      Some ast
+  | exception Lexer.Error msg -> 
+      Printf.eprintf "Lexer error: %s\n" msg; flush stdout; None
+  | exception Parser.Error -> 
+      Printf.printf "Parse error at position %d\n" (Lexing.lexeme_start (Lexing.from_string input)); flush stdout; None
+  | exception ex -> 
+      Printf.eprintf "Unexpected error: %s\n" (Printexc.to_string ex); flush stdout; None
 
 let repl () =
   print_endline ("Synrc POSIX Shell (c) 2025\n");
-  try while true do
+  let rec repl_loop () =
     print_string "$ ";
-    let line = read_line () in
-    match parse_string line with
-    | Some ast -> Printf.printf ": Parsed (%s)\n" (string_of_exp ast)
-    | None -> Printf.printf ": None\n"
-  done with End_of_file -> print_newline ()
+    match read_line () with
+    | line ->
+        (match parse_string line with
+         | Some ast -> Printf.printf ": Parsed (%s)\n" (string_of_exp ast)
+         | None -> Printf.printf ": None\n");
+        repl_loop ()
+    | exception End_of_file -> print_newline ()
+  in
+  repl_loop ()
 
 let () = repl ()
