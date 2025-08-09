@@ -1,0 +1,1 @@
+echo -e "pwd\nls | head -3\nwhoami\necho hello world\necho test content > test_all.txt\ncat test_all.txt\nls | grep test\nwhoami | cat > user_test.txt\ncat user_test.txt\necho multiple | cat | cat\nls -la | head -2\nenv | head -3\nmkdir test_dir\nls | grep test_dir\ncd test_dir\npwd\ncd ..\nrm -rf test_dir\nls | grep test_dir\nexit" | ./coq/sh

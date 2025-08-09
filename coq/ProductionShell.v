@@ -3,14 +3,33 @@ Require Import FullAst.
 Require Import List.
 Import ListNotations.
 
-(* Production Real-World Shell - Full Integration *)
+(* Production Real-World Shell with Pipes and Redirection *)
 
-(* Enhanced command parsing with simple space splitting *)
-Axiom split_on_first_space : ocaml_string -> (ocaml_string (* Extract command parsinExtract Constant rm_cmd => "\"rm\"".
-Extract Constant cp_cmd => "\"cp\"".
-Extract Constant env_cmd => "\"env\"".
-Extract Constant whoami_cmd => "\"whoami\"".
-Extract Constant empty_cmd => "\"\"".Extract Constant split_on_first_space => "fun s -> try let idx = String.index s ' ' in let cmd = String.sub s 0 idx in let arg = String.sub s (idx+1) (String.length s - idx - 1) in (cmd, arg) with Not_found -> (s, \"\")".ocaml_string).
+(* Enhanced command parsing *)
+Axiom split_on_first_space : ocaml_string -> (ocaml_string * ocaml_string).
+Axio(* Production shell loop *)
+Fixpoint production_shell_loop (env : ProductionEnv) (max_iterations : nat) : ProductionShell unit :=
+  match max_iterations with
+  | O => 
+      IO.bind (print_endline "DEBUG: Loop ended due to max iterations") (fun _ => IO.ret tt)
+  | S n =>
+      let prompt := generate_production_prompt env in
+      IO.bind (print_string prompt) (fun _ =>
+      IO.bind read_line (fun input =>
+      IO.bind (print_endline "DEBUG: Got input") (fun _ =>
+      if ostring_eqb input exit_cmd then
+        IO.bind (print_endline goodbye_msg) (fun _ => IO.ret tt)
+      else
+        IO.bind (production_execute_command env input) (fun result =>
+          match result with
+          | (_, new_env) => 
+              IO.bind (print_endline "DEBUG: Command executed, continuing loop") (fun _ =>
+              production_shell_loop new_env n)
+          end))))
+  end.ence : ocaml_string -> list ocaml_string.
+Axiom contains_pipe : ocaml_string -> bool.
+Axiom contains_redirect : ocaml_string -> bool.
+Axiom parse_simple_redirect : ocaml_string -> (ocaml_string * option (ocaml_string * ocaml_string)).
 
 (* String constants and error messages *)
 Axiom ls_error_msg : ocaml_string.
@@ -19,6 +38,8 @@ Axiom cat_error_msg : ocaml_string.
 Axiom mkdir_error_msg : ocaml_string.
 Axiom rm_error_msg : ocaml_string.
 Axiom cp_error_msg : ocaml_string.
+Axiom pipe_error_msg : ocaml_string.
+Axiom redirect_error_msg : ocaml_string.
 Axiom goodbye_msg : ocaml_string.
 Axiom welcome_msg : ocaml_string.
 Axiom features_msg : ocaml_string.
@@ -59,8 +80,10 @@ Axiom real_create_directory : ocaml_string -> bool.
 Axiom real_delete_file : ocaml_string -> bool.
 Axiom real_copy_file : ocaml_string -> ocaml_string -> bool.
 
-(* Process execution *)
+(* Process execution with pipes and redirection support *)
 Axiom real_execute_process : ocaml_string -> (nat * ocaml_string).
+Axiom real_execute_pipe : list ocaml_string -> (nat * ocaml_string).
+Axiom real_execute_with_redirect : ocaml_string -> option (ocaml_string * ocaml_string) -> (nat * ocaml_string).
 
 (* Environment operations *)
 Axiom real_get_all_env : unit -> list (ocaml_string * ocaml_string).
@@ -197,60 +220,85 @@ Definition production_execute_external (env : ProductionEnv) (cmd : ocaml_string
   else
     IO.ret (Failure exit_code, set_exit_code env exit_code)).
 
-(* Enhanced command dispatcher with argument parsing *)
+(* Enhanced command dispatcher with pipe and redirection support *)
 Definition parse_command_args (input : ocaml_string) : (ocaml_string * ocaml_string) :=
   split_on_first_space input.
 
 Definition production_execute_command (env : ProductionEnv) (input : ocaml_string) : ProductionShell (Status * ProductionEnv) :=
-  let (cmd, arg) := parse_command_args input in
-  if ostring_eqb cmd exit_cmd then
-    IO.bind (print_endline goodbye_msg) (fun _ => 
-    IO.ret (Success, env))
-  else if ostring_eqb cmd ls_cmd then
-    production_execute_ls env
-  else if ostring_eqb cmd pwd_cmd then
-    production_execute_pwd env
-  else if ostring_eqb cmd cd_cmd then
-    let target := if ostring_eqb arg empty_cmd then real_get_home_dir tt else arg in
-    production_execute_cd env target
-  else if ostring_eqb cmd cat_cmd then
-    if ostring_eqb arg empty_cmd then
-      IO.bind (print_endline cat_error_msg) (fun _ =>
-      IO.ret (Failure 1, set_exit_code env 1))
+  (* Check for pipes first *)
+  if contains_pipe input then
+    IO.bind (print_endline "DEBUG: Pipe detected") (fun _ =>
+    let pipe_parts := parse_pipe_sequence input in
+    let (exit_code, output) := real_execute_pipe pipe_parts in
+    IO.bind (print_string output) (fun _ =>
+    let nat_exit_code := exit_code in
+    if Nat.eqb nat_exit_code 0 then
+      IO.ret (Success, set_exit_code env 0)
     else
-      production_execute_cat env arg
-  else if ostring_eqb cmd mkdir_cmd then
-    if ostring_eqb arg empty_cmd then
-      IO.bind (print_endline mkdir_error_msg) (fun _ =>
-      IO.ret (Failure 1, set_exit_code env 1))
+      IO.ret (Failure nat_exit_code, set_exit_code env nat_exit_code)))
+  (* Check for redirections *)
+  else if contains_redirect input then
+    IO.bind (print_endline "DEBUG: Redirection detected") (fun _ =>
+    let (cmd_part, redirect_info) := parse_simple_redirect input in
+    let (exit_code, output) := real_execute_with_redirect cmd_part redirect_info in
+    IO.bind (print_string output) (fun _ =>
+    let nat_exit_code := exit_code in
+    if Nat.eqb nat_exit_code 0 then
+      IO.ret (Success, set_exit_code env 0)
     else
-      production_execute_mkdir env arg
-  else if ostring_eqb cmd rm_cmd then
-    if ostring_eqb arg empty_cmd then
-      IO.bind (print_endline rm_error_msg) (fun _ =>
-      IO.ret (Failure 1, set_exit_code env 1))
-    else
-      production_execute_rm env arg
-  else if ostring_eqb cmd cp_cmd then
-    if ostring_eqb arg empty_cmd then
-      IO.bind (print_endline cp_error_msg) (fun _ =>
-      IO.ret (Failure 1, set_exit_code env 1))
-    else
-      (* For cp, we need to parse two arguments: src and dst *)
-      let (src, dst) := split_on_first_space arg in
-      if ostring_eqb dst empty_cmd then
+      IO.ret (Failure nat_exit_code, set_exit_code env nat_exit_code)))
+  (* Regular command processing *)
+  else
+    IO.bind (print_endline "DEBUG: Regular command") (fun _ =>
+    let (cmd, arg) := parse_command_args input in
+    if ostring_eqb cmd exit_cmd then
+      IO.bind (print_endline goodbye_msg) (fun _ => 
+      IO.ret (Success, env))
+    else if ostring_eqb cmd ls_cmd then
+      production_execute_ls env
+    else if ostring_eqb cmd pwd_cmd then
+      production_execute_pwd env
+    else if ostring_eqb cmd cd_cmd then
+      let target := if ostring_eqb arg empty_cmd then real_get_home_dir tt else arg in
+      production_execute_cd env target
+    else if ostring_eqb cmd cat_cmd then
+      if ostring_eqb arg empty_cmd then
+        IO.bind (print_endline cat_error_msg) (fun _ =>
+        IO.ret (Failure 1, set_exit_code env 1))
+      else
+        production_execute_cat env arg
+    else if ostring_eqb cmd mkdir_cmd then
+      if ostring_eqb arg empty_cmd then
+        IO.bind (print_endline mkdir_error_msg) (fun _ =>
+        IO.ret (Failure 1, set_exit_code env 1))
+      else
+        production_execute_mkdir env arg
+    else if ostring_eqb cmd rm_cmd then
+      if ostring_eqb arg empty_cmd then
+        IO.bind (print_endline rm_error_msg) (fun _ =>
+        IO.ret (Failure 1, set_exit_code env 1))
+      else
+        production_execute_rm env arg
+    else if ostring_eqb cmd cp_cmd then
+      if ostring_eqb arg empty_cmd then
         IO.bind (print_endline cp_error_msg) (fun _ =>
         IO.ret (Failure 1, set_exit_code env 1))
       else
-        production_execute_cp env src dst
-  else if ostring_eqb cmd env_cmd then
-    production_execute_env env
-  else if ostring_eqb cmd whoami_cmd then
-    production_execute_whoami env
-  else if ostring_eqb cmd empty_cmd then
-    IO.ret (Success, env)
-  else
-    production_execute_external env input.
+        (* For cp, we need to parse two arguments: src and dst *)
+        let (src, dst) := split_on_first_space arg in
+        if ostring_eqb dst empty_cmd then
+          IO.bind (print_endline cp_error_msg) (fun _ =>
+          IO.ret (Failure 1, set_exit_code env 1))
+        else
+          production_execute_cp env src dst
+    else if ostring_eqb cmd env_cmd then
+      production_execute_env env
+    else if ostring_eqb cmd whoami_cmd then
+      production_execute_whoami env
+    else if ostring_eqb cmd empty_cmd then
+      IO.ret (Success, env)
+    else
+      production_execute_external env input.
 
 (* Generate enhanced prompt *)
 Definition generate_production_prompt (env : ProductionEnv) : ocaml_string :=
@@ -270,6 +318,7 @@ Fixpoint production_shell_loop (env : ProductionEnv) (max_iterations : nat) : Pr
       if ostring_eqb input exit_cmd then
         IO.bind (print_endline goodbye_msg) (fun _ => IO.ret tt)
       else
+        IO.bind (print_endline "DEBUG: Processing command") (fun _ =>
         IO.bind (production_execute_command env input) (fun result =>
           match result with
           | (_, new_env) => production_shell_loop new_env n
@@ -291,6 +340,15 @@ Extraction Language OCaml.
 Extract Constant ostring_eqb => "(=)".
 Extract Constant ostring_app => "(^)".
 
+(* IO functions with proper error handling *)
+Extract Constant read_line => "fun k -> 
+  try 
+    let line = Stdlib.read_line () in 
+    k line 
+  with End_of_file -> 
+    Printf.printf \"DEBUG: EOF reached, exiting\\n%!\"; 
+    k \"exit\"".
+
 (* Extract command parsing *)
 Extract Constant split_on_first_space => "fun s -> try let idx = String.index s ' ' in let cmd = String.sub s 0 idx in let arg = String.sub s (idx+1) (String.length s - idx - 1) in (cmd, arg) with Not_found -> (s, """")".
 
@@ -301,10 +359,12 @@ Extract Constant cat_error_msg => "\"cat: no such file or directory\"".
 Extract Constant mkdir_error_msg => "\"mkdir: cannot create directory\"".
 Extract Constant rm_error_msg => "\"rm: cannot remove file\"".
 Extract Constant cp_error_msg => "\"cp: cannot copy file\"".
-Extract Constant goodbye_msg => "\"Goodbye from Production Shell!\"".
-Extract Constant welcome_msg => "\"Production Coq Shell v2.0 - Real File Operations\"".
-Extract Constant features_msg => "\"Full Unix integration: ls, pwd, cd, cat, mkdir, rm, cp, env, whoami\"".
-Extract Constant commands_msg => "\"Type commands or 'exit' to quit\"".
+Extract Constant goodbye_msg => "\"Goodbye from Enhanced Production Shell!\"".
+Extract Constant welcome_msg => "\"🌍 Enhanced Production Coq Shell v3.0 - Pipes & Redirections\"".
+Extract Constant features_msg => "\"✅ Full Unix integration: ls, pwd, cd, cat, mkdir, rm, cp, env, whoami + pipes | and redirections > <\"".
+Extract Constant commands_msg => "\"🚀 Type commands or 'exit' to quit\"".
+Extract Constant pipe_error_msg => "\"pipe: operation failed\"".
+Extract Constant redirect_error_msg => "\"redirection: cannot open file\"".
 Extract Constant prompt_suffix => "\"$ \"".
 Extract Constant at_symbol => "\"@\"".
 Extract Constant colon_symbol => "\":\"".
@@ -321,7 +381,163 @@ Extract Constant env_cmd => """env""".
 Extract Constant whoami_cmd => """whoami""".
 Extract Constant empty_cmd => """""".
 
-(* Extract with real Unix operations *)
+(* Enhanced parsing functions *)
+Extract Constant parse_pipe_sequence => 
+  "fun s -> String.split_on_char '|' s |> List.map String.trim |> List.filter (fun x -> x <> \"\")".
+
+Extract Constant contains_pipe => 
+  "fun s -> String.contains s '|'".
+
+Extract Constant contains_redirect => 
+  "fun s -> String.contains s '>' || String.contains s '<'".
+
+Extract Constant parse_simple_redirect =>
+  "fun s -> 
+   if String.contains s '>' then
+     let parts = String.split_on_char '>' s in
+     match parts with
+     | [cmd; file] -> (String.trim cmd, Some (\"write\", String.trim file))
+     | _ -> (s, None)
+   else if String.contains s '<' then
+     let parts = String.split_on_char '<' s in
+     match parts with  
+     | [cmd; file] -> (String.trim cmd, Some (\"read\", String.trim file))
+     | _ -> (s, None)
+   else (s, None)".
+
+(* Enhanced execution functions *)
+Extract Constant real_execute_pipe =>
+  "fun commands ->
+   let rec pipe_exec input = function
+     | [] -> (0, input)
+     | [last_cmd] ->
+         (try
+           let temp_input = Filename.temp_file \"pipe_input\" \"tmp\" in
+           let oc = open_out temp_input in
+           output_string oc input;
+           close_out oc;
+           let full_cmd = last_cmd ^ \" < \" ^ temp_input in
+           let ic = Unix.open_process_in full_cmd in
+           let output = Buffer.create 1024 in
+           (try
+             while true do
+               let line = input_line ic in
+               Buffer.add_string output line;
+               Buffer.add_char output '\\n'
+             done
+           with End_of_file -> ());
+           let result = Buffer.contents output in
+           let status = Unix.close_process_in ic in
+           Sys.remove temp_input;
+           match status with
+           | Unix.WEXITED n -> (n, result)
+           | _ -> (1, result)
+         with _ -> (1, \"\"))
+     | cmd :: rest ->
+         (try
+           let temp_input = Filename.temp_file \"pipe_input\" \"tmp\" in
+           let oc = open_out temp_input in
+           output_string oc input;
+           close_out oc;
+           let full_cmd = cmd ^ \" < \" ^ temp_input in
+           let ic = Unix.open_process_in full_cmd in
+           let output = Buffer.create 1024 in
+           (try
+             while true do
+               let line = input_line ic in
+               Buffer.add_string output line;
+               Buffer.add_char output '\\n'
+             done
+           with End_of_file -> ());
+           let result = Buffer.contents output in
+           let status = Unix.close_process_in ic in
+           Sys.remove temp_input;
+           match status with
+           | Unix.WEXITED 0 -> pipe_exec result rest
+           | Unix.WEXITED n -> (n, \"\")
+           | _ -> (1, \"\")
+         with _ -> (1, \"\"))
+   in
+   pipe_exec \"\" commands".
+
+Extract Constant real_execute_with_redirect =>
+  "fun cmd redirect_info ->
+   match redirect_info with
+   | Some (\"write\", filename) ->
+       (try
+         let ic = Unix.open_process_in cmd in
+         let output = Buffer.create 1024 in
+         (try
+           while true do
+             let line = input_line ic in
+             Buffer.add_string output line;
+             Buffer.add_char output '\\n'
+           done
+         with End_of_file -> ());
+         let status = Unix.close_process_in ic in
+         let content = Buffer.contents output in
+         let oc = open_out filename in
+         output_string oc content;
+         close_out oc;
+         match status with
+         | Unix.WEXITED n -> (n, \"\")
+         | _ -> (1, \"\")
+       with _ -> (1, \"\"))
+   | Some (\"read\", filename) ->
+       if Sys.file_exists filename then
+         (try
+           let ic_file = open_in filename in
+           let file_content = Buffer.create 1024 in
+           (try
+             while true do
+               let line = input_line ic_file in
+               Buffer.add_string file_content line;
+               Buffer.add_char file_content '\\n'
+             done
+           with End_of_file -> ());
+           close_in ic_file;
+           let content = Buffer.contents file_content in
+           let temp_file = Filename.temp_file \"input\" \"tmp\" in
+           let oc = open_out temp_file in
+           output_string oc content;
+           close_out oc;
+           let full_cmd = cmd ^ \" < \" ^ temp_file in
+           let ic = Unix.open_process_in full_cmd in
+           let output = Buffer.create 1024 in
+           (try
+             while true do
+               let line = input_line ic in
+               Buffer.add_string output line;
+               Buffer.add_char output '\\n'
+             done
+           with End_of_file -> ());
+           let result = Buffer.contents output in
+           let status = Unix.close_process_in ic in
+           Sys.remove temp_file;
+           match status with
+           | Unix.WEXITED n -> (n, result)
+           | _ -> (1, result)
+         with _ -> (1, \"\"))
+       else
+         (1, \"Cannot read from \" ^ filename ^ \"\\n\")
+   | None ->
+       (try
+         let ic = Unix.open_process_in cmd in
+         let output = Buffer.create 1024 in
+         (try
+           while true do
+             let line = input_line ic in
+             Buffer.add_string output line;
+             Buffer.add_char output '\\n'
+           done
+         with End_of_file -> ());
+         let result = Buffer.contents output in
+         let status = Unix.close_process_in ic in
+         match status with
+         | Unix.WEXITED n -> (n, result)
+         | _ -> (1, result)
+       with _ -> (1, \"\"))
+   | _ -> (1, \"\")".
 Extract Constant real_file_exists => "Sys.file_exists".
 Extract Constant real_is_directory => "Sys.is_directory".
 Extract Constant real_read_file => "fun filename -> try let ic = open_in filename in let len = in_channel_length ic in let content = really_input_string ic len in close_in ic; content with _ -> \"\"".
@@ -339,5 +555,6 @@ Extract Constant real_get_home_dir => "fun () -> try Sys.getenv \"HOME\" with No
 
 (* No extraction directives for nat - use defaults *)
 Extract Inductive bool => "bool" [ "true" "false" ].
+Extract Inductive nat => "int" [ "0" "(fun x -> x + 1)" ].
 
 Extraction "production_shell.ml" production_main_shell.

@@ -37,15 +37,26 @@ fi
 # Verify Production Shell Runner
 if [ -f "coq/production_shell_runner" ] && [ -x "coq/production_shell_runner" ]; then
     echo "✅ production_shell_runner: Ready and executable"
+elif [ -f "coq/sh" ] && [ -x "coq/sh" ]; then
+    echo "✅ sh: Ready and executable"
 else
-    echo "❌ production_shell_runner: Missing or not executable"
+    echo "❌ production_shell_runner/sh: Missing or not executable"
     exit 1
 fi
 
 # Test production shell runner
 echo "🧪 Quick functionality test..."
 cd coq
-if echo -e "whoami\nexit" | timeout 3 ./production_shell_runner | grep -q "ih"; then
+if [ -f "production_shell_runner" ]; then
+    SHELL_CMD="./production_shell_runner"
+elif [ -f "sh" ]; then
+    SHELL_CMD="./sh"
+else
+    echo "❌ No shell executable found"
+    exit 1
+fi
+
+if echo -e "whoami\nexit" | timeout 3 $SHELL_CMD | grep -q "ih"; then
     echo "✅ Production shell runner functional test: PASSED"
 else
     echo "⚠️  Production shell runner functional test: WARNING (might be environment specific)"

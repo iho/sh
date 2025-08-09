@@ -1,0 +1,5 @@
+(executables
+ (public_names production_shell_runner)
+ (names production_shell)
+ (modules production_shell)
+ (libraries unix))
