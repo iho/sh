@@ -1,6 +1,7 @@
 ---
 applyTo: '**'
 ---
+don't use emodji or unicode 
 use proper axiom-based string constants
 You are implementing fix for code that will be overwrited. You need to change code generation
 make all string axioms
