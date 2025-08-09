@@ -199,7 +199,8 @@ Definition cmd_cat (env : ShellEnv) (args : list ocaml_string) : Shell (Status *
   | filename :: _ =>
       if sys_file_exists filename then
         let content := sys_read_file filename in
-        IO.bind (print_string content) (fun _ => IO.ret (Success, env))
+        IO.bind (print_string content)
+          (fun _ => IO.bind (print_endline (string_literal "")) (fun _ => IO.ret (Success, env)))
       else
   IO.bind (print_endline msg_cat_file_not_found) (fun _ => IO.ret (Failure 1, set_exit_code env 1))
   end.

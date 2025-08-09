@@ -1,83 +1,67 @@
 #!/bin/bash
 
-# Master regeneration script - rebuilds both FullAst and Production Shell Runner
-# This script coordinates the complete rebuild of all Coq-generated components
+# Master regeneration script - rebuilds FullAst and Production Shell
+# Coordinates complete rebuild of Coq-generated components
 
-set -e  # Exit on any error
+set -e
 
-echo "🔄 Master Regeneration Script - Rebuilding All Coq Components"
-echo "============================================================="
+echo "Master Regeneration Script - Rebuilding All Coq Components"
+echo "==========================================================="
 
 # Get script directory
 SCRIPT_DIR="$(dirname "$0")"
 cd "$SCRIPT_DIR"
 
 echo ""
-echo "1️⃣  Regenerating FullAst..."
-echo "----------------------------"
+echo "1. Regenerating FullAst..."
+echo "--------------------------"
 ./regenerate_fullast.sh
 
 echo ""
-echo "2️⃣  Regenerating Production Shell Runner..."
-echo "--------------------------------------------"
+echo "2. Regenerating Production Shell..."
+echo "----------------------------------"
 ./regenerate_production_shell.sh
 
 echo ""
-echo "3️⃣  Final Verification..."
-echo "------------------------"
+echo "3. Final Verification..."
+echo "----------------------"
 
 # Verify FullAst
 if [ -f "coq/FullAst.vo" ]; then
-    echo "✅ FullAst.vo: Ready"
+    echo "FullAst.vo: Ready"
 else
-    echo "❌ FullAst.vo: Missing"
+    echo "ERROR: FullAst.vo missing"
     exit 1
 fi
 
-# Verify Production Shell Runner
-if [ -f "coq/production_shell_runner" ] && [ -x "coq/production_shell_runner" ]; then
-    echo "✅ production_shell_runner: Ready and executable"
-elif [ -f "coq/sh" ] && [ -x "coq/sh" ]; then
-    echo "✅ sh: Ready and executable"
+if [ -f "coq/sh" ] && [ -x "coq/sh" ]; then
+        echo "coq/sh: Ready and executable"
 else
-    echo "❌ production_shell_runner/sh: Missing or not executable"
-    exit 1
+        echo "ERROR: coq/sh missing or not executable"
+        exit 1
 fi
 
-# Test production shell runner
-echo "🧪 Quick functionality test..."
-cd coq
-if [ -f "production_shell_runner" ]; then
-    SHELL_CMD="./production_shell_runner"
-elif [ -f "sh" ]; then
-    SHELL_CMD="./sh"
+echo "Quick functionality test..."
+if printf "whoami\nexit\n" | timeout 3 ./coq/sh | grep -q "ih"; then
+    echo "Shell functional test: PASSED"
 else
-    echo "❌ No shell executable found"
-    exit 1
+    echo "Shell functional test: WARNING (output not matched)"
 fi
-
-if echo -e "whoami\nexit" | timeout 3 $SHELL_CMD | grep -q "ih"; then
-    echo "✅ Production shell runner functional test: PASSED"
-else
-    echo "⚠️  Production shell runner functional test: WARNING (might be environment specific)"
-fi
-
-cd ..
 
 echo ""
-echo "🎉 MASTER REGENERATION COMPLETED SUCCESSFULLY!"
-echo "=============================================="
+echo "MASTER REGENERATION COMPLETED"
+echo "================================" 
 echo ""
 echo "📊 Summary:"
-echo "- ✅ FullAst.v compiled with 20 operations support"
-echo "- ✅ Production shell runner extracted and built"
-echo "- ✅ All proofs verified"
-echo "- ✅ Executable ready for use"
+echo "- FullAst.v compiled"
+echo "- Production shell built (coq/sh)"
+echo "- Proof objects present"
+echo "- Executable ready"
 echo ""
 echo "🚀 Usage:"
-echo "  ./coq/production_shell_runner  # Run the verified shell"
+echo "  ./coq/sh  # Run the shell"
 echo ""
 echo "📁 Key Files Generated:"
 echo "  coq/FullAst.vo               # Compiled AST with proofs"
-echo "  coq/production_shell.ml      # Extracted OCaml code"
-echo "  coq/production_shell_runner  # Executable shell"
+echo "  coq/production_shell.ml      # OCaml source"
+echo "  coq/sh                       # Executable shell"

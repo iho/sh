@@ -1,68 +1,76 @@
 #!/bin/bash
 
-# Regenerate Production Shell Runner (working version)
-# This script creates a working production_shell.ml and builds the executable
+# Regenerate Production Shell (production mode)
+# Builds the executable coq/sh from production_shell.ml (extracted or maintained)
 
-set -e  # Exit on any error
+set -e
 
-echo "🔄 Regenerating Production Shell Runner..."
+echo "Regenerating Production Shell (verified runner)..."
 
-cd "$(dirname "$0")/coq"
+SCRIPT_DIR="$(dirname "$0")"
+cd "$SCRIPT_DIR/coq"
 
-# Clean previous artifacts
-echo "🧹 Cleaning previous build artifacts..."
+echo "Cleaning previous build artifacts..."
 rm -f production_shell.cmi production_shell.cmx production_shell.o
-rm -f production_shell_runner
-# Handle sh file permissions
-if [ -f "sh" ]; then
-    chmod u+w sh 2>/dev/null || true
-    rm -f sh
+rm -f production_shell_runner sh
+
+# Prefer dune build when dune file & sources present; fallback to direct ocamlopt
+BUILD_MODE="dune"
+if [ ! -f dune ]; then
+    echo "No dune file found – falling back to direct ocamlopt build"
+    BUILD_MODE="direct"
 fi
 
-# Create the working OCaml file directly (since Coq extraction has issues)
-echo "📝 Creating production_shell.ml..."
-
-echo "✅ OCaml source created: production_shell.ml"
-
-# Check if dune file exists, create if missing
-if [ ! -f "dune" ]; then
-    echo "📝 Creating dune file..."
-    cat > dune << 'EOF'
-(executables
- (public_names production_shell_runner)
- (names production_shell)
- (modules production_shell)
- (libraries unix))
-EOF
+SOURCE=production_shell.ml
+if [ ! -f "$SOURCE" ]; then
+    if [ -f sh.ml ]; then
+        SOURCE=sh.ml
+        echo "production_shell.ml not found, using extracted sh.ml"
+    else
+        echo "Error: no production shell source (production_shell.ml or sh.ml) present" >&2
+        exit 1
+    fi
 fi
 
-# Build with ocamlfind (direct compilation)
-echo "🏗️  Building production shell executable..."
-ocamlfind ocamlopt -package unix -linkpkg production_shell.ml -o production_shell_runner
+if [ "$BUILD_MODE" = "dune" ]; then
+    echo "Building via dune..."
+    (cd .. && dune build coq/production_shell.exe) || {
+        echo "Dune build failed – retrying direct build" >&2
+        BUILD_MODE="direct"
+    }
+fi
 
-# Also create sh for backward compatibility
-echo "📦 Creating sh executable for compatibility..."
-cp production_shell_runner sh
-chmod +x sh
-
-# Test the executable
-echo "🧪 Testing production_shell_runner..."
-if echo -e "pwd\nexit" | timeout 5 ./sh > /dev/null 2>&1; then
-    echo "✅ Production shell runner working correctly"
+if [ "$BUILD_MODE" = "direct" ]; then
+    echo "Building directly with ocamlopt (temporarily ignoring stale interface)..."
+    if [ -f production_shell.mli ]; then
+        mv production_shell.mli production_shell.mli.bak_direct_build
+        RESTORE_MLI=1
+    fi
+        if ! ocamlfind ocamlopt -package unix,readline -linkpkg "$SOURCE" -o production_shell_runner; then
+        echo "Direct build failed" >&2
+        # restore interface if moved
+        [ -n "$RESTORE_MLI" ] && mv production_shell.mli.bak_direct_build production_shell.mli
+        exit 2
+    fi
+    [ -n "$RESTORE_MLI" ] && mv production_shell.mli.bak_direct_build production_shell.mli
+    cp production_shell_runner sh
 else
-    echo "⚠️  Production shell runner test had issues (might be timeout)"
+    echo "Copying dune-built executable..."
+    cp ../_build/default/coq/production_shell.exe production_shell_runner
+    # Provide legacy alias 'sh' as some scripts expect ./coq/sh
+    cp production_shell_runner sh
 fi
 
-echo ""
-echo "🎯 Production Shell Features:"
-echo "- Real Unix integration: ls, pwd, cd, cat, mkdir, rm, cp, env, whoami ✅"
-echo "- Interactive shell with custom prompt ✅"
-echo "- File system operations ✅"
-echo "- Environment variable support ✅"
-echo "- External command execution ✅"
-echo "- Formal verification through Coq ✅"
+chmod +x production_shell_runner sh 2>/dev/null || true
 
-echo ""
-echo "✅ Production Shell Runner regeneration completed successfully!"
-echo "📁 Generated files: production_shell.ml, production_shell_runner"
-echo "🚀 Run with: ./coq/sh"
+echo "Smoke test (pwd; exit)..."
+if echo -e "pwd\nexit" | timeout 5 ./production_shell_runner >/dev/null 2>&1; then
+    echo "production_shell_runner basic test passed"
+else
+    echo "WARNING: production_shell_runner smoke test failed (continuing)" >&2
+fi
+
+echo
+echo "Production Shell regeneration completed"
+echo "Generated executables: coq/production_shell_runner (primary), coq/sh (alias)"
+echo "Run with: ./coq/production_shell_runner"
